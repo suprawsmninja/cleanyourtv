@@ -257,7 +257,13 @@ final class TopShelf {
             if (focused && e.image != null) setBackdrop(e.image);
         });
         frame.setOnClickListener(v -> open(e));
-        frame.setOnKeyListener((v, keyCode, event) -> keyCode == KeyEvent.KEYCODE_DPAD_UP);   // nothing above the shelf
+        // Up goes on to the top bar; Android's focus finder finds nothing there from the shelf.
+        frame.setOnKeyListener((v, keyCode, event) -> {
+            if (keyCode != KeyEvent.KEYCODE_DPAD_UP) return false;
+            View pill = activity.findViewById(R.id.btnInputs);
+            if (event.getAction() == KeyEvent.ACTION_DOWN && pill != null && pill.isShown()) pill.requestFocus();
+            return true;
+        });
         return col;
     }
 
