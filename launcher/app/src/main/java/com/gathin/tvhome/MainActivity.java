@@ -2551,7 +2551,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             button.setId(View.generateViewId());
             logo.setBounds(0, 0, size, size);
             button.setCompoundDrawablesRelative(logo, null, null, null);
-            button.setCompoundDrawableTintList(null);
+            // A full-colour app logo keeps its colours; a plain vector glyph (the Scenes app's lightbulb) follows the
+            // pill's text colour like the built-in icons, so it turns dark on the white focused pill.
+            button.setCompoundDrawableTintList(logo instanceof android.graphics.drawable.VectorDrawable
+                    ? button.getTextColors() : null);
             button.setContentDescription(label);
             Intent target = launch;
             button.setOnClickListener(v -> open(new Intent(target)));
