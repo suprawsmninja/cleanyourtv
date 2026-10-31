@@ -484,7 +484,16 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             heroLogo.setMaxHeight((int) (130 * density));
             heroLogo.setVisibility(View.GONE);
             LinearLayout heroGroup = (LinearLayout) hero;
-            heroGroup.addView(heroLogo, 0, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            // One fixed-height slot for the title, logo or text, sitting on its bottom edge: whatever the logo's shape,
+            // the line, the Watch pill and the dots under it stay in the same place for every slide and every app.
+            FrameLayout titleSlot = new FrameLayout(this);
+            int at = heroGroup.indexOfChild(heroName);
+            heroGroup.removeView(heroName);
+            titleSlot.addView(heroName, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM | Gravity.START));
+            titleSlot.addView(heroLogo, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM | Gravity.START));
+            heroGroup.addView(titleSlot, at, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, (int) (140 * density)));
             heroPill = buildHeroPill();
             LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             plp.topMargin = (int) (18 * density);
