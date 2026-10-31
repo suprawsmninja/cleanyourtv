@@ -769,10 +769,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             ViewGroup bar = findViewById(R.id.topButtons);
             weatherPill = (TextView) getLayoutInflater().inflate(R.layout.top_weather_pill, bar, false);
             weatherPill.setId(View.generateViewId());
-            weatherPill.setOnClickListener(v -> {
-                Intent climate = new Intent().setClassName("com.luke.scenes", "com.luke.scenes.ClimateActivity");
-                if (getPackageManager().resolveActivity(climate, 0) != null) open(climate);
-            });
+            weatherPill.setFocusable(false);   // display only: the remote skips it
             bar.addView(weatherPill, bar.indexOfChild(btnInputs));
         }
         View btnSettings = findViewById(R.id.btnSettings);
@@ -1900,7 +1897,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     String label = c.getString(c.getColumnIndexOrThrow("label"));
                     int ti = c.getColumnIndexOrThrow("temperature");
                     String unit = c.getString(c.getColumnIndexOrThrow("unit"));
-                    text = c.isNull(ti) ? label : label + " · " + c.getDouble(ti) + " " + unit;
+                    // "Partly cloudy 17°C · 22°C Living": outside, then this room's own sensor, in whole degrees.
+                    String deg = unit.replace(" ", "");
+                    text = c.isNull(ti) ? label : label + " " + Math.round(c.getDouble(ti)) + deg;
+                    int ri = c.getColumnIndex("room_temperature");
+                    if (ri >= 0 && !c.isNull(ri)) {
+                        text += "  ·  " + Math.round(c.getDouble(ri)) + deg + " " + c.getString(c.getColumnIndexOrThrow("room"));
+                    }
                     icon = weatherIcon(condition);
                 }
             } catch (RuntimeException e) {
