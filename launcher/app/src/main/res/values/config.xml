@@ -449,6 +449,9 @@
          app's softened artwork (0 to 100, 50 as before; 0 leaves the wallpaper uncovered). Lower values let a
          theme's wallpaper show through. A theme can set "cinematic_scrim" and "cinematic_art". -->
     <integer name="cinematic_scrim">100</integer>
+    <!-- tvhome fork: with cinematic_home, a slideshow of what's popular on the focused dock app's service fills
+         the screen behind the shelf (ShelfSlides). The art comes from the Watch Now app (com.luke.watchnow). -->
+    <bool name="shelf_slides">true</bool>
     <integer name="cinematic_art">50</integer>
 
     <!-- The glow behind the dock in the focused app's colour (red for YouTube, blue for Prime Video). false keeps

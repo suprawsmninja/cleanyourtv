@@ -165,6 +165,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private float heroArtAlpha = 0.5f;
     /** Softened artwork per app (HeroArt, about 5 KB each), made the first time its dock tile is focused. */
     private final Map<String, Bitmap> heroArtCache = new HashMap<>();
+    /** config.xml shelf_slides: Watch Now's art for the focused dock app behind the shelf; null when off. */
+    private ShelfSlides slides;
+    /** The dock app the shelf is showing, and its name, for the slideshow's lines. */
+    private String heroLabel;
     /** The app whose artwork heroArt shows, so focusing it again only fades it back in. */
     private String heroArtKey;
     /** The focus glow's colour while the cinematic shelf tints it, 0 for plain white glass. */
@@ -460,6 +464,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         cinematicWhiteFocus = cfg.cinematicWhiteFocus;
         heroArtAlpha = cfg.cinematicArt / 100f;
         if (cinematic) setUpCinematicShelf(cfg.cinematicScrim);
+        if (cinematic && getResources().getBoolean(R.bool.shelf_slides)) {
+            slides = new ShelfSlides(this, root, ambient, this::onSlide);   // above the glow: the art stays untinted
+            // A title can be much longer than an app's name: keep it to the left part of the screen.
+            heroName.setMaxWidth(getResources().getDisplayMetrics().widthPixels * 3 / 5);
+            heroName.setEllipsize(TextUtils.TruncateAt.END);
+        }
         // dock_title false: the name above the dock (and the cinematic lines under it) never shows; the glow
         // still follows the dock.
         if (!cfg.dockTitle) hero.setVisibility(View.GONE);
@@ -943,6 +953,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onResume() {
         super.onResume();
+        if (slides != null) slides.resume();
         // A festival that started or ended while Home was in the background: rebuild with or without it.
         if (festive != festival.active(LocalDate.now())) {
             recreate();
@@ -1154,6 +1165,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onPause() {
         super.onPause();
+        if (slides != null) slides.pause();
         root.removeCallbacks(showIdleClock);
         endReorder();   // Home or another app while reordering keeps the order so far
         wallpaperPlayer.stop();
@@ -1216,6 +1228,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        if (slides != null) slides.destroy();
         unregisterReceiver(packageReceiver);
         wallpaperPlayer.close();
         ConnectivityManager cm = getSystemService(ConnectivityManager.class);
@@ -1729,8 +1742,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         String label = adapter.labelAt(position);
         int color = adapter.ambientColorAt(position);
         float y = dockTopInRoot - 14 * density - 26 * density - hero.getHeight();
-        boolean changed = !label.contentEquals(heroName.getText());
-        if (cinematic && heroArtAlpha > 0f) showHeroArt(position);
+        boolean changed = !label.equals(heroLabel);
+        boolean slideshow = slides != null && slides.show(adapter.packageAt(position));
+        if (cinematic && heroArtAlpha > 0f && !slideshow) showHeroArt(position);
 
         if (!animations || reducedMotion) {
             // Snap the shelf instead of sliding and fading it: each of those frames repaints the
@@ -1791,10 +1805,29 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     /** The shelf's text for this dock app: its name and, on the cinematic shelf, "Last opened" and the dots. */
     private void fillHero(int position, String label) {
+        heroLabel = label;
         heroName.setText(label);
         if (!cinematic) return;
+        if (slides != null && slides.showing()) {
+            heroName.setText(slides.title());
+            heroMeta.setText(label);
+            heroMeta.setVisibility(View.VISIBLE);
+            updateHeroDots(position);
+            return;
+        }
         updateHeroMeta(position);
         updateHeroDots(position);
+    }
+
+    /** A new slide: its title takes the name's place, the app's name moves to the line under it. */
+    private void onSlide(String title) {
+        heroArt.animate().cancel();
+        heroArt.animate().alpha(0f).setDuration(300).start();
+        heroArtKey = null;
+        if (heroLabel == null) return;
+        heroName.setText(title);
+        heroMeta.setText(heroLabel);
+        heroMeta.setVisibility(View.VISIBLE);
     }
 
     // ---- cinematic shelf -------------------------------------------------------------------------
@@ -2028,6 +2061,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     }
 
     private void hideHero() {
+        if (slides != null) slides.hide();
+        heroLabel = null;
         if (!heroShown) return;
         stopAmbientAnimation();
         hero.animate().cancel();
