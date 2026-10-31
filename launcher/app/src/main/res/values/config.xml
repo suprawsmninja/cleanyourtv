@@ -437,9 +437,6 @@
          dots, the focus glow takes the app's colour and the dock band turns translucent. false keeps the plain
          shelf. Can also be set with "cinematic_home": true in a theme's config.json. -->
     <bool name="cinematic_home">false</bool>
-    <!-- tvhome fork: Apple TV's top shelf (TopShelf). A focused dock app shows what it shares with the system
-         (Continue watching, then its preview channel) above the dock. Needs pm grant READ_TV_LISTINGS. -->
-    <bool name="top_shelf">true</bool>
     <!-- With cinematic_home, false leaves out the dock position dots under the app's name, for a quieter shelf. Can
          also be set with "cinematic_dots": false in a theme's config.json. -->
     <bool name="cinematic_dots">true</bool>
