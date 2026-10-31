@@ -165,6 +165,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private float heroArtAlpha = 0.5f;
     /** Softened artwork per app (HeroArt, about 5 KB each), made the first time its dock tile is focused. */
     private final Map<String, Bitmap> heroArtCache = new HashMap<>();
+    /** config.xml top_shelf: the focused dock app's shared titles above the dock; null when off. */
+    private TopShelf topShelf;
     /** The app whose artwork heroArt shows, so focusing it again only fades it back in. */
     private String heroArtKey;
     /** The focus glow's colour while the cinematic shelf tints it, 0 for plain white glass. */
@@ -460,6 +462,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         cinematicWhiteFocus = cfg.cinematicWhiteFocus;
         heroArtAlpha = cfg.cinematicArt / 100f;
         if (cinematic) setUpCinematicShelf(cfg.cinematicScrim);
+        if (getResources().getBoolean(R.bool.top_shelf)) topShelf = new TopShelf(this, root, heroArt);
         // dock_title false: the name above the dock (and the cinematic lines under it) never shows; the glow
         // still follows the dock.
         if (!cfg.dockTitle) hero.setVisibility(View.GONE);
@@ -943,6 +946,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onResume() {
         super.onResume();
+        if (topShelf != null) topShelf.refresh();
         // A festival that started or ended while Home was in the background: rebuild with or without it.
         if (festive != festival.active(LocalDate.now())) {
             recreate();
@@ -1216,6 +1220,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        if (topShelf != null) topShelf.destroy();
         unregisterReceiver(packageReceiver);
         wallpaperPlayer.close();
         ConnectivityManager cm = getSystemService(ConnectivityManager.class);
@@ -1726,6 +1731,22 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     // ---- top shelf -------------------------------------------------------------------------------
 
     private void showHero(int position, float dockTopInRoot) {
+        if (topShelf != null && topShelf.show(adapter.packageAt(position), dockTopInRoot)) {
+            // The shelf's cards and art take the place of the app's name and blurred artwork.
+            hero.animate().cancel();
+            heroArt.animate().cancel();
+            if (animations && !reducedMotion) {
+                hero.animate().alpha(0f).setDuration(120).start();
+                heroArt.animate().alpha(0f).setDuration(200).start();
+            } else {
+                hero.setAlpha(0f);
+                heroArt.setAlpha(0f);
+            }
+            heroArtKey = null;
+            heroShown = false;
+            if (ambientGlow) setAmbient(adapter.ambientColorAt(position));
+            return;
+        }
         String label = adapter.labelAt(position);
         int color = adapter.ambientColorAt(position);
         float y = dockTopInRoot - 14 * density - 26 * density - hero.getHeight();
@@ -2028,6 +2049,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     }
 
     private void hideHero() {
+        if (topShelf != null) topShelf.hide();
         if (!heroShown) return;
         stopAmbientAnimation();
         hero.animate().cancel();
