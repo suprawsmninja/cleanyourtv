@@ -28,6 +28,7 @@ import android.graphics.Shader;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
+import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.media.tv.TvContract;
 import android.media.tv.TvInputInfo;
@@ -169,6 +170,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private ShelfSlides slides;
     /** The dock app the shelf is showing, and its name, for the slideshow's lines. */
     private String heroLabel;
+    /** shelf_slides: the title's logo over the name, the Watch pill, and the app the pill opens. */
+    private ImageView heroLogo;
+    private TextView heroPill;
+    private String heroPillPackage;
+    /** Where the shelf's bottom edge sits, so a taller or shorter logo grows the shelf upwards. */
+    private float heroBottom;
     /** The app whose artwork heroArt shows, so focusing it again only fades it back in. */
     private String heroArtKey;
     /** The focus glow's colour while the cinematic shelf tints it, 0 for plain white glass. */
@@ -466,6 +473,22 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (cinematic) setUpCinematicShelf(cfg.cinematicScrim);
         if (cinematic && getResources().getBoolean(R.bool.shelf_slides)) {
             slides = new ShelfSlides(this, root, ambient, this::onSlide);   // above the glow: the art stays untinted
+            heroLogo = new ImageView(this);
+            heroLogo.setAdjustViewBounds(true);
+            heroLogo.setScaleType(ImageView.ScaleType.FIT_START);
+            heroLogo.setMaxWidth(getResources().getDisplayMetrics().widthPixels * 2 / 5);
+            heroLogo.setMaxHeight((int) (130 * density));
+            heroLogo.setVisibility(View.GONE);
+            LinearLayout heroGroup = (LinearLayout) hero;
+            heroGroup.addView(heroLogo, 0, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            heroPill = buildHeroPill();
+            LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            plp.topMargin = (int) (18 * density);
+            plp.bottomMargin = (int) (6 * density);
+            heroGroup.addView(heroPill, heroGroup.indexOfChild(heroMeta) + 1, plp);
+            hero.addOnLayoutChangeListener((v, l, t, r, bottom, ol, ot, or, ob) -> {
+                if (heroBottom > 0 && bottom - t != ob - ot) v.setY(heroBottom - v.getHeight());
+            });
             // A title can be much longer than an app's name: keep it to the left part of the screen.
             heroName.setMaxWidth(getResources().getDisplayMetrics().widthPixels * 3 / 5);
             heroName.setEllipsize(TextUtils.TruncateAt.END);
@@ -1742,6 +1765,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         String label = adapter.labelAt(position);
         int color = adapter.ambientColorAt(position);
         float y = dockTopInRoot - 14 * density - 26 * density - hero.getHeight();
+        heroBottom = dockTopInRoot - 14 * density - 26 * density;
         boolean changed = !label.equals(heroLabel);
         boolean slideshow = slides != null && slides.show(adapter.packageAt(position));
         if (cinematic && heroArtAlpha > 0f && !slideshow) showHeroArt(position);
@@ -1809,25 +1833,98 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         heroName.setText(label);
         if (!cinematic) return;
         if (slides != null && slides.showing()) {
-            heroName.setText(slides.title());
-            heroMeta.setText(label);
-            heroMeta.setVisibility(View.VISIBLE);
-            updateHeroDots(position);
+            showSlideInHero(slides.slide(), slides.index(), slides.count());
             return;
         }
+        if (heroPill != null) heroPill.setVisibility(View.GONE);
+        if (heroLogo != null) heroLogo.setVisibility(View.GONE);
+        heroName.setVisibility(View.VISIBLE);
+        heroName.setTextSize(TypedValue.COMPLEX_UNIT_SP, 68f);
+        if (heroDotsShown) heroDots.setVisibility(View.VISIBLE);
         updateHeroMeta(position);
         updateHeroDots(position);
     }
 
     /** A new slide: its title takes the name's place, the app's name moves to the line under it. */
-    private void onSlide(String title) {
+    private void onSlide(ShelfSlides.Slide slide, int index, int count) {
         heroArt.animate().cancel();
         heroArt.animate().alpha(0f).setDuration(300).start();
         heroArtKey = null;
         if (heroLabel == null) return;
-        heroName.setText(title);
-        heroMeta.setText(heroLabel);
+        showSlideInHero(slide, index, count);
+    }
+
+    /**
+     * Disney+'s header: the title's logo (or its name), "Netflix · 2026 · Drama", a Watch pill and a dot per slide.
+     * On Watch Now's tile the service is the slide's own; on a service's tile, that service.
+     */
+    private void showSlideInHero(ShelfSlides.Slide s, int index, int count) {
+        if (s == null) return;
+        String service = s.service.isEmpty() ? heroLabel : s.service;
+        heroName.setText(s.title);
+        heroName.setTextSize(TypedValue.COMPLEX_UNIT_SP, s.title.length() > 18 ? 44f : 68f);   // when there's no logo
+        heroName.setVisibility(View.GONE);
+        heroLogo.setVisibility(View.VISIBLE);
+        slides.loadLogo(s.logo, heroLogo, () -> {
+            heroLogo.setVisibility(View.GONE);
+            heroName.setVisibility(View.VISIBLE);
+        });
+        heroMeta.setText(s.meta.isEmpty() ? service : service + "  ·  " + s.meta);
         heroMeta.setVisibility(View.VISIBLE);
+        heroPill.setText(getString(R.string.slide_watch_on, service));
+        heroPill.setVisibility(View.VISIBLE);
+        heroPillPackage = s.pkg.isEmpty() ? null : s.pkg;
+        drawDots(Math.min(count, 12), index);
+    }
+
+    /** The header's Watch pill: Left/Right page through the slides, OK opens the title's app, Down goes back to the dock. */
+    private TextView buildHeroPill() {
+        TextView pill = new TextView(this);
+        pill.setTextColor(0xFFFFFFFF);
+        pill.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        pill.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        pill.setLetterSpacing(0.04f);
+        pill.setPadding((int) (22 * density), (int) (10 * density), (int) (22 * density), (int) (10 * density));
+        GradientDrawable rest = new GradientDrawable();
+        rest.setCornerRadius(24 * density);
+        rest.setColor(0x33FFFFFF);
+        rest.setStroke((int) density, 0x66FFFFFF);
+        GradientDrawable focus = new GradientDrawable();
+        focus.setCornerRadius(24 * density);
+        focus.setColor(0xFFFFFFFF);
+        pill.setBackground(rest);
+        pill.setFocusable(true);
+        pill.setVisibility(View.GONE);
+        pill.setOnFocusChangeListener((v, focused) -> {
+            pill.setBackground(focused ? focus : rest);
+            pill.setTextColor(focused ? 0xFF111111 : 0xFFFFFFFF);
+            if (focused) slides.pause();
+            else slides.resume();
+        });
+        pill.setOnClickListener(v -> {
+            String pkg = heroPillPackage != null ? heroPillPackage : adapter.packageAt(Math.max(0, lastFocused));
+            Intent i = pkg == null ? null : getPackageManager().getLeanbackLaunchIntentForPackage(pkg);
+            if (i == null && pkg != null) i = getPackageManager().getLaunchIntentForPackage(pkg);
+            if (i != null) open(i);
+        });
+        pill.setOnKeyListener((v, keyCode, event) -> {
+            boolean down = event.getAction() == KeyEvent.ACTION_DOWN;
+            switch (keyCode) {
+                case KeyEvent.KEYCODE_DPAD_LEFT:
+                case KeyEvent.KEYCODE_DPAD_RIGHT:
+                    if (down) slides.step(keyCode == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : -1);
+                    return true;
+                case KeyEvent.KEYCODE_DPAD_DOWN:
+                    if (down) focusTile(Math.max(0, lastFocused));
+                    return true;
+                case KeyEvent.KEYCODE_DPAD_UP:
+                    if (down) btnInputs.requestFocus();
+                    return true;
+                default:
+                    return false;
+            }
+        });
+        return pill;
     }
 
     // ---- cinematic shelf -------------------------------------------------------------------------
@@ -1926,7 +2023,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     /** One dot per dock app, the focused one drawn long and white. Hebrew docks start on the right, so do the dots. */
     private void updateHeroDots(int position) {
         if (!heroDotsShown) return;
-        int count = Math.min(adapter.dockFilled(), COLUMNS);
+        drawDots(Math.min(adapter.dockFilled(), COLUMNS), position);
+    }
+
+    /** count dots, the one at position drawn long and white. */
+    private void drawDots(int count, int position) {
         heroDots.setVisibility(count > 1 ? View.VISIBLE : View.INVISIBLE);
         if (heroDots.getChildCount() != count) {
             heroDots.removeAllViews();
@@ -2310,6 +2411,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     rtlAppGrid, keyCode == KeyEvent.KEYCODE_DPAD_LEFT);
         }
         if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+            if (position < COLUMNS && heroPill != null && heroPill.isShown()) {
+                heroPill.requestFocus();                   // shelf_slides: up into the header first
+                return true;
+            }
             if (position < COLUMNS) return false;          // dock row: let focus move to the top bar
             target = position - COLUMNS;
         } else {

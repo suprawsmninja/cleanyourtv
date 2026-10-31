@@ -36,16 +36,21 @@ final class ShelfSlides {
     private static final long LIST_MAX_AGE_MS = 10 * 60 * 1000;
 
     interface Listener {
-        /** The slide now showing, to put its title where the app's name was. */
-        void onSlide(String title);
+        /** The slide now showing (index of count), to put its title or logo where the app's name was. */
+        void onSlide(Slide slide, int index, int count);
     }
 
     static final class Slide {
-        final String title, image;
+        /** logo: a transparent title logo (content uri) or null; meta: "2026 · Drama"; pkg: the app that has it. */
+        final String title, image, logo, meta, service, pkg;
 
-        Slide(String title, String image) {
+        Slide(String title, String image, String logo, String meta, String service, String pkg) {
             this.title = title;
             this.image = image;
+            this.logo = logo;
+            this.meta = meta;
+            this.service = service;
+            this.pkg = pkg;
         }
     }
 
@@ -129,8 +134,49 @@ final class ShelfSlides {
         return known != null && !known.isEmpty();
     }
 
-    String title() {
-        return showing() ? current.get(index).title : "";
+    Slide slide() {
+        return showing() ? current.get(index) : null;
+    }
+
+    int index() {
+        return index;
+    }
+
+    int count() {
+        return showing() ? current.size() : 0;
+    }
+
+    /** Left or Right on the header: the previous or next slide straight away. */
+    void step(int by) {
+        if (!showing()) return;
+        index = (index + by + current.size()) % current.size();
+        showSlide(generation);
+    }
+
+    /** Decodes a small image (a logo) off the main thread; missing runs when there is none to show. */
+    void loadLogo(String uri, ImageView into, Runnable missing) {
+        into.setTag(uri);
+        Bitmap hit = uri == null ? null : bitmaps.get(uri);
+        if (uri == null || hit != null) {
+            into.setImageBitmap(hit);
+            if (hit == null) missing.run();
+            return;
+        }
+        work.execute(() -> {
+            Bitmap bmp = null;
+            try (InputStream in = activity.getContentResolver().openInputStream(Uri.parse(uri))) {
+                if (in != null) bmp = BitmapFactory.decodeStream(in);
+            } catch (Exception e) {
+                Log.d(TAG, "logo failed: " + uri + ": " + e);
+            }
+            Bitmap done = bmp;
+            main.post(() -> {
+                if (done != null) bitmaps.put(uri, done);
+                if (!uri.equals(into.getTag())) return;
+                into.setImageBitmap(done);
+                if (done == null) missing.run();
+            });
+        });
     }
 
     boolean showing() {
@@ -209,7 +255,7 @@ final class ShelfSlides {
             b.animate().alpha(0f).setDuration(900).start();
         }
         topShown = !topShown;
-        listener.onSlide(s.title);
+        listener.onSlide(s, index, current.size());
         main.removeCallbacks(advance);
         if (!paused) main.postDelayed(advance, SLIDE_MS);
     }
@@ -226,15 +272,22 @@ final class ShelfSlides {
         List<Slide> out = new ArrayList<>();
         try (Cursor c = activity.getContentResolver().query(Uri.withAppendedPath(SLIDES, pkg), null, null, null, null)) {
             if (c == null) return out;
-            int iTitle = c.getColumnIndex("title"), iImage = c.getColumnIndex("image");
+            int iTitle = c.getColumnIndex("title"), iImage = c.getColumnIndex("image"), iLogo = c.getColumnIndex("logo"),
+                    iMeta = c.getColumnIndex("meta"), iService = c.getColumnIndex("service"), iPkg = c.getColumnIndex("package");
             while (c.moveToNext()) {
                 String image = iImage < 0 ? null : c.getString(iImage);
-                if (image != null) out.add(new Slide(iTitle < 0 ? "" : c.getString(iTitle), image));
+                if (image != null) out.add(new Slide(col(c, iTitle), image, iLogo < 0 ? null : c.getString(iLogo),
+                        col(c, iMeta), col(c, iService), col(c, iPkg)));
             }
         } catch (RuntimeException e) {
             Log.d(TAG, "no slides for " + pkg + ": " + e);
         }
         return out;
+    }
+
+    private static String col(Cursor c, int i) {
+        String s = i < 0 ? null : c.getString(i);
+        return s == null ? "" : s;
     }
 
     private Bitmap decode(String uri) {
