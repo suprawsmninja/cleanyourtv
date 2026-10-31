@@ -176,6 +176,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private String heroPillPackage;
     /** Where the shelf's bottom edge sits, so a taller or shorter logo grows the shelf upwards. */
     private float heroBottom;
+    /** setHeaderMode: whether the apps are lowered under a focused header, by how much; and whether Home should open on the header. */
+    private boolean headerMode;
+    private float headerOffset;
+    private boolean headerFirst;
     /** The app whose artwork heroArt shows, so focusing it again only fades it back in. */
     private String heroArtKey;
     /** The focus glow's colour while the cinematic shelf tints it, 0 for plain white glass. */
@@ -662,6 +666,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             // A single row never shows the names under its tiles (the title above the row names the app), so the
             // 7dp gap and 22dp label item_app.xml keeps for them would only lift the row: sit it that much lower.
             if (singleRow && !cfg.alwaysShowNames) want += (int) (29 * density);
+            // shelf_slides (Disney+ layout): the dock a little lower, so a quarter of the next row peeks out.
+            if (slides != null && MainActivity.this.dockRow && rowsBelowDock == 0) want += (int) (6 * density);
             if (grid.getPaddingTop() != want) {
                 grid.setPadding(grid.getPaddingLeft(), want, grid.getPaddingRight(), grid.getPaddingBottom());
                 // A vertical grid parks the dock on the new padding line by scrolling (onTileFocused); a sideways
@@ -944,6 +950,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        headerFirst = slides != null;
         if (openLauncherSettingsIfAsked(intent)) return;
         if (openInputsIfAsked(intent)) return;
         if (intent == null || !intent.hasCategory(Intent.CATEGORY_HOME)) return;
@@ -977,6 +984,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     protected void onResume() {
         super.onResume();
         if (slides != null) slides.resume();
+        headerFirst = slides != null;
         // A festival that started or ended while Home was in the background: rebuild with or without it.
         if (festive != festival.active(LocalDate.now())) {
             recreate();
@@ -1875,6 +1883,37 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         heroPill.setVisibility(View.VISIBLE);
         heroPillPackage = s.pkg.isEmpty() ? null : s.pkg;
         drawDots(Math.min(count, 12), index);
+        // Home opens on the header, as Disney+ does, once there is a slide to show.
+        if (headerFirst && grid.hasFocus() && lastFocused < COLUMNS) {
+            headerFirst = false;
+            heroPill.postDelayed(() -> {   // after the dock has parked, so the header lands in the right place
+                if (grid.hasFocus() && heroPill.isShown()) heroPill.requestFocus();
+            }, 450);
+        }
+    }
+
+    /**
+     * Disney+'s home: with the header focused the apps sink until the dock is half off the bottom of the screen and
+     * the header moves down with them; Down brings the dock back up to its usual place.
+     */
+    private void setHeaderMode(boolean on) {
+        if (on == headerMode) return;
+        float offset = 0f;
+        if (on) {
+            RecyclerView.ViewHolder vh = grid.findViewHolderForAdapterPosition(Math.max(0, Math.min(lastFocused, COLUMNS - 1)));
+            View card = vh == null ? null : vh.itemView.findViewById(R.id.card);
+            if (card == null || card.getHeight() == 0 || heroBottom <= 0) return;
+            // The dock's tiles start where showHero last placed them (40dp under the shelf), even mid-scroll.
+            float cardTop = heroBottom + 40 * density;
+            offset = Math.max(0, root.getHeight() - cardTop - card.getHeight() / 2f);
+        }
+        headerMode = on;
+        float by = on ? offset : -headerOffset;
+        headerOffset = on ? offset : 0f;
+        long ms = !animations ? 0 : reducedMotion ? Motion.REDUCED_MS : 320;
+        grid.animate().translationY(headerOffset).setDuration(ms).setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
+        heroBottom += by;
+        hero.animate().y(heroBottom - hero.getHeight()).setDuration(ms).setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
     }
 
     /** The header's Watch pill: Left/Right page through the slides, OK opens the title's app, Down goes back to the dock. */
@@ -1898,8 +1937,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         pill.setOnFocusChangeListener((v, focused) -> {
             pill.setBackground(focused ? focus : rest);
             pill.setTextColor(focused ? 0xFF111111 : 0xFFFFFFFF);
-            if (focused) slides.pause();
-            else slides.resume();
+            setHeaderMode(focused);
         });
         pill.setOnClickListener(v -> {
             String pkg = heroPillPackage != null ? heroPillPackage : adapter.packageAt(Math.max(0, lastFocused));
