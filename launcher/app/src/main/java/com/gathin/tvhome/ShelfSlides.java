@@ -162,6 +162,7 @@ final class ShelfSlides {
             if (hit == null) missing.run();
             return;
         }
+        into.setImageBitmap(null);   // never leave the previous title's logo up while this one loads
         work.execute(() -> {
             Bitmap bmp = null;
             try (InputStream in = activity.getContentResolver().openInputStream(Uri.parse(uri))) {
