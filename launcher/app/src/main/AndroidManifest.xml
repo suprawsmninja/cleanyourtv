@@ -27,6 +27,8 @@
     <queries>
         <!-- shelf_slides: Watch Now's art provider. -->
         <provider android:authorities="com.luke.watchnow.shelf" />
+        <!-- weather_pill: the Scenes app's Home Assistant provider. -->
+        <provider android:authorities="com.luke.scenes.ha" />
         <!-- The standard settings handlers, so package visibility doesn't hide them and send the pills to a vendor fallback by mistake. -->
         <intent>
             <action android:name="android.settings.SETTINGS" />

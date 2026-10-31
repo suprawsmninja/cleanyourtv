@@ -38,6 +38,7 @@ import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.NetworkRequest;
 import android.net.Uri;
+import android.database.Cursor;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.os.Build;
@@ -166,6 +167,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private float heroArtAlpha = 0.5f;
     /** Softened artwork per app (HeroArt, about 5 KB each), made the first time its dock tile is focused. */
     private final Map<String, Bitmap> heroArtCache = new HashMap<>();
+    /** config.xml weather_pill: Home Assistant's weather in the top bar, read from the Scenes app; null when off. */
+    private TextView weatherPill;
+    private final Runnable weatherTick = new Runnable() {
+        @Override public void run() {
+            refreshWeather();
+            handler.postDelayed(this, 10 * 60 * 1000);
+        }
+    };
+
     /** config.xml shelf_slides: Watch Now's art for the focused dock app behind the shelf; null when off. */
     private ShelfSlides slides;
     /** The dock app the shelf is showing, and its name, for the slideshow's lines. */
@@ -755,6 +765,16 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
 
         btnInputs = findViewById(R.id.btnInputs);
+        if (getResources().getBoolean(R.bool.weather_pill)) {
+            ViewGroup bar = findViewById(R.id.topButtons);
+            weatherPill = (TextView) getLayoutInflater().inflate(R.layout.top_weather_pill, bar, false);
+            weatherPill.setId(View.generateViewId());
+            weatherPill.setOnClickListener(v -> {
+                Intent climate = new Intent().setClassName("com.luke.scenes", "com.luke.scenes.ClimateActivity");
+                if (getPackageManager().resolveActivity(climate, 0) != null) open(climate);
+            });
+            bar.addView(weatherPill, bar.indexOfChild(btnInputs));
+        }
         View btnSettings = findViewById(R.id.btnSettings);
         btnInputs.setOnClickListener(v -> showInputs());
         btnWifi.setOnClickListener(v -> openNetworkPill());
@@ -993,6 +1013,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     protected void onResume() {
         super.onResume();
         if (slides != null) slides.resume();
+        if (weatherPill != null) {
+            handler.removeCallbacks(weatherTick);
+            handler.post(weatherTick);
+        }
         headerFirst = slides != null;
         // A festival that started or ended while Home was in the background: rebuild with or without it.
         if (festive != festival.active(LocalDate.now())) {
@@ -1206,6 +1230,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     protected void onPause() {
         super.onPause();
         if (slides != null) slides.pause();
+        handler.removeCallbacks(weatherTick);
         root.removeCallbacks(showIdleClock);
         endReorder();   // Home or another app while reordering keeps the order so far
         wallpaperPlayer.stop();
@@ -1860,6 +1885,48 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (heroDotsShown) heroDots.setVisibility(View.VISIBLE);
         updateHeroMeta(position);
         updateHeroDots(position);
+    }
+
+    private static final Uri WEATHER = Uri.parse("content://com.luke.scenes.ha/weather");
+
+    /** Reads the weather off the main thread (the Scenes app may go to Home Assistant for it). */
+    private void refreshWeather() {
+        new Thread(() -> {
+            String text = null;
+            int icon = 0;
+            try (Cursor c = getContentResolver().query(WEATHER, null, null, null, null)) {
+                if (c != null && c.moveToFirst()) {
+                    String condition = c.getString(c.getColumnIndexOrThrow("condition"));
+                    String label = c.getString(c.getColumnIndexOrThrow("label"));
+                    int ti = c.getColumnIndexOrThrow("temperature");
+                    String unit = c.getString(c.getColumnIndexOrThrow("unit"));
+                    text = c.isNull(ti) ? label : label + " · " + c.getDouble(ti) + " " + unit;
+                    icon = weatherIcon(condition);
+                }
+            } catch (RuntimeException e) {
+                android.util.Log.d("TvHome", "weather unavailable: " + e);
+            }
+            String done = text;
+            int doneIcon = icon;
+            handler.post(() -> {
+                if (weatherPill == null) return;
+                weatherPill.setVisibility(done == null ? View.GONE : View.VISIBLE);
+                if (done == null) return;
+                weatherPill.setText(done);
+                weatherPill.setCompoundDrawablesRelativeWithIntrinsicBounds(doneIcon, 0, 0, 0);
+            });
+        }, "weather").start();
+    }
+
+    private static int weatherIcon(String condition) {
+        switch (condition) {
+            case "sunny": return R.drawable.ic_wx_sunny;
+            case "clear-night": return R.drawable.ic_wx_night;
+            case "partlycloudy": return R.drawable.ic_wx_partly;
+            case "rainy": case "pouring": case "snowy-rainy": case "hail": return R.drawable.ic_wx_rain;
+            case "lightning": case "lightning-rainy": return R.drawable.ic_wx_storm;
+            default: return R.drawable.ic_wx_cloudy;
+        }
     }
 
     /** A new slide: its title takes the name's place, the app's name moves to the line under it. */

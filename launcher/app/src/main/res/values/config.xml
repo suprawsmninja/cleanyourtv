@@ -452,6 +452,8 @@
     <!-- tvhome fork: with cinematic_home, a slideshow of what's popular on the focused dock app's service fills
          the screen behind the shelf (ShelfSlides). The art comes from the Watch Now app (com.luke.watchnow). -->
     <bool name="shelf_slides">true</bool>
+    <!-- tvhome fork: Home Assistant's weather as a pill in the top bar, read from the Scenes app (com.luke.scenes). -->
+    <bool name="weather_pill">true</bool>
     <integer name="cinematic_art">50</integer>
 
     <!-- The glow behind the dock in the focused app's colour (red for YouTube, blue for Prime Video). false keeps

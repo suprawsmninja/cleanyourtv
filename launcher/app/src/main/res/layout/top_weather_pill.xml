@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- tvhome fork, weather_pill: "Partly cloudy · 17.1 °C" from Home Assistant, through the Scenes app. -->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    style="@style/TopButton"
+    android:visibility="gone"
+    android:nextFocusDown="@+id/grid" />
