@@ -34,6 +34,7 @@ final class ShelfSlides {
     private static final Uri SLIDES = Uri.parse("content://com.luke.watchnow.shelf/slides/");
     private static final long SLIDE_MS = 8000;
     private static final long LIST_MAX_AGE_MS = 10 * 60 * 1000;
+    private static final long EMPTY_RETRY_MS = 20 * 1000;
 
     interface Listener {
         /** The slide now showing (index of count), to put its title or logo where the app's name was. */
@@ -116,7 +117,10 @@ final class ShelfSlides {
         main.removeCallbacks(advance);
         List<Slide> known = lists.get(pkg);
         Long when = listTimes.get(pkg);
-        boolean fresh = when != null && SystemClock.elapsedRealtime() - when < LIST_MAX_AGE_MS;
+        // An empty answer is kept only briefly: right after a TV first comes online Watch Now is still fetching
+        // its art, and caching "nothing" for ten minutes left the shelf still for the whole first visit.
+        long maxAge = known != null && known.isEmpty() ? EMPTY_RETRY_MS : LIST_MAX_AGE_MS;
+        boolean fresh = when != null && SystemClock.elapsedRealtime() - when < maxAge;
         if (known != null && fresh) {
             start(known, gen);
             return !known.isEmpty();
@@ -129,6 +133,10 @@ final class ShelfSlides {
                 lists.put(pkg, list);
                 listTimes.put(pkg, SystemClock.elapsedRealtime());
                 if (gen == generation) start(list, gen);
+                // Still nothing while this app stays focused: ask again shortly.
+                if (list.isEmpty() && gen == generation) main.postDelayed(() -> {
+                    if (gen == generation && !paused) retry(pkg);
+                }, EMPTY_RETRY_MS);
             });
         });
         return known != null && !known.isEmpty();
@@ -178,6 +186,12 @@ final class ShelfSlides {
                 if (done == null) missing.run();
             });
         });
+    }
+
+    /** Re-queries an app that had no slides, keeping it the focused one. */
+    private void retry(String pkg) {
+        this.pkg = null;
+        show(pkg);
     }
 
     boolean showing() {
